@@ -1,0 +1,87 @@
+CALVE VOICE AGENT: PROJECT REPORT
+
+1. OVERVIEW
+--------------------------------------------------------------------------------
+The CALVE Voice Agent is a modular, asynchronous voice interaction system designed to implement a natural "Listen-Think-Speak" loop. Unlike traditional synchronous voice assistants that block while listening or speaking, CALVE aims for a more fluid interaction model. It is built to support state-of-the-art Large Language Models (LLMs) and Neural Text-to-Speech (TTS) engines, capable of handling multi-language interactions (specifically English and Hindi) and detecting user interruptions.
+
+The system is architected as a set of distinct biological metaphors:
+- "Ear" for hearing and transcription.
+- "Brain" for cognition and state management.
+- "Mouth" for speech synthesis.
+- "Vagus" for autonomic control (interruption detection).
+
+2. SURVEY & TECHNOLOGY STACK
+--------------------------------------------------------------------------------
+The selection of technologies for CALVE focuses on a balance between local performance and cloud intelligence.
+
+2.1. Speech-to-Text (STT)
+- Selected Technology: Faster-Whisper (CTranslate2 implementation of OpenAI's Whisper).
+- Justification: Standard OpenAI Whisper is accurate but computationally heavy. Faster-Whisper offers up to 4x speed improvements with similar accuracy, essential for a low-latency voice agent.
+- Voice Activity Detection (VAD): WebRTCVAD is used for millisecond-level silence detection, allowing the system to know exactly when the user has stopped speaking, far faster than model-based silence detection.
+
+2.2. Intelligence (LLM)
+- Framework: LangChain & LangGraph.
+- Justification: LangGraph allows for defining the agent as a state machine (Cyclic Graph), which is crucial for maintaining conversation history and potentially adding complex cognitive steps (tools, RAG) in the future.
+- Models Supported:
+  - Anthropic Claude 3.5 Sonnet (Primary): Chosen for high nuance and reasoning capabilities.
+  - OpenAI GPT-4o: Supported as a robust alternative.
+  - Ollama (Local): Supported for privacy-focused, offline usage (e.g., Qwen 2.5).
+
+2.3. Text-to-Speech (TTS)
+- Primary Engine: Kokoro-82M (NeuralMouth).
+- Justification: rigorous survey of open-source TTS reveals Kokoro as a high-fidelity, lightweight (82M parameters), and fast model that rivals commercial APIs. It supports multiple languages and is efficient enough to run locally.
+- Fallback Engine: pyttsx3 (System default TTS) for offline, low-resource scenarios.
+
+2.4. Audio I/O
+- Libraries: PyAudio (PortAudio wrapper) for microphone input; SoundDevice for high-quality audio playback.
+
+3. METHODOLOGY & ARCHITECTURE
+--------------------------------------------------------------------------------
+The system follows a strict modular architecture where each component operates independently, loosely coupled via the main execution loop.
+
+3.1. The "Ear" Module (core/ear.py)
+The hearing system runs on a dual-thread architecture:
+- Capture Thread: Continuously reads raw bytes from the microphone into a thread-safe Queue to prevent buffer overflows.
+- Processing Loop: Consumes the Queue and applies WebRTCVAD. It aggregates "speech frames" and detects "silence durations".
+- Transcription: Once a silence threshold (1200ms) is met, the aggregated audio is normalized to float32 and passed to Faster-Whisper.
+- Hallucination Filter: The system implements heuristic filters to reject common Whisper hallucinations (e.g., "Thanks for watching").
+
+3.2. The "Brain" Module (core/brain.py)
+The cognitive core is built on LangGraph:
+- State Management: Maintains a `messages` list in the agent state.
+- Execution: Input text is wrapped in a `HumanMessage`, processed by the LLM, and the response is appended to the history.
+- Context Awareness: The design supports keeping short-term memory of the conversation, allowing for multi-turn dialogue.
+
+3.3. The "Mouth" Module (core/mouth_neural.py)
+The speech synthesis system is designed for multilingual fluidity:
+- Neural Pipeline: Uses KPipeline (Kokoro) for generating audio.
+- Language Switching: The `NeuralMouth` analyzes the output text for Devanagari characters (Unicode range 0900–097F). If Hindi text is detected, it automatically swaps the pipeline and voice (e.g., to `hf_alpha`) to ensure correct pronunciation.
+- Streamed Playback: Audio is generated and queued for playback via `SoundDevice` to minimize "Time to First Byte" latency.
+
+3.4. The "Vagus" Module (core/vagus.py)
+Named after the Vagus Nerve which controls parasympathetic functions:
+- Function: Monitors the audio input stream *while* the agent is speaking.
+- Logic: If VAD detects human speech during agent output, it flags an `interrupted` state.
+- Goal: To enable the agent to stop speaking immediately when interrupted, mimicking natural human turn-taking.
+
+4. IMPLEMENTATION DETAILS
+--------------------------------------------------------------------------------
+- Environment: Python 3.10+
+- Key Dependencies: `faster-whisper`, `langgraph`, `sounddevice`, `webrtcvad`.
+- Configuration: Managed via `.env` files (API keys, model sizes).
+- Hardware Acceleration: The system automatically detects CUDA (GPU) availability for both Whisper and Kokoro to accelerate inference.
+
+5. CURRENT FEATURES
+--------------------------------------------------------------------------------
+- Real-time Transcription with local Whisper models.
+- Intelligent conversational abilities via Claude 3.5 or GPT-4o.
+- High-quality Neural TTS that sounds near-human.
+- Automatic English/Hindi language detection and voice switching.
+- Robust error handling for API failures and audio device issues.
+
+6. FUTURE SCOPE
+--------------------------------------------------------------------------------
+- Full Duplex Audio: Implementing Acoustic Echo Cancellation (AEC) to allow the microphone to remain open while the speaker is active without the agent hearing itself.
+- Vision Support: Integrating a "Eye" module (camera input) to allow the agent to see the user's environment.
+- Emotion Recognition: Analyzing audio prosody to detect user emotion and adjusting TTS style accordingly.
+- GUI Integration: Connecting the backend python agent to the React-based Dashboard/GUI for visual feedback of agent state (Thinking, Speaking, Listening).
