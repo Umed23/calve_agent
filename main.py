@@ -3,8 +3,10 @@ CALVE Voice Agent — FastAPI Web Service
 Entry point for the Render-hosted REST API.
 
 Endpoints:
-  GET  /health         → Render health check
-  POST /trigger-call   → Trigger AI booking call for a patient
+  GET  /health            → Render health check
+  POST /trigger-call      → Outbound: trigger AI booking call for a patient
+  POST /incoming-call     → Inbound: Twilio webhook — greet caller
+  POST /process-speech    → Inbound: Twilio webhook — process patient speech
 """
 
 import os
@@ -14,12 +16,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from config.settings import settings
 from api.booking_brain import BookingBrain
 from api.models import TriggerCallRequest, BookingResponse
+from api.voice_handler import build_greeting_twiml, build_response_twiml
 
 # Validate all required env vars on startup — fail fast
 settings.validate()
@@ -109,6 +113,59 @@ async def trigger_call(request: TriggerCallRequest):
     )
 
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Inbound call webhooks (Twilio → Render)                                      #
+# --------------------------------------------------------------------------- #
+
+@app.post("/incoming-call", tags=["Inbound Voice"])
+async def incoming_call():
+    """
+    Twilio calls this webhook when a patient dials your Twilio number.
+    Returns TwiML: plays a Hindi greeting and starts listening.
+
+    Configure in Twilio Console:
+      Phone Number → Voice → Webhook → https://calve-agent.onrender.com/incoming-call
+    """
+    twiml = build_greeting_twiml()
+    return Response(content=twiml, media_type="application/xml")
+
+
+@app.post("/process-speech", tags=["Inbound Voice"])
+async def process_speech(
+    SpeechResult: str = Form(default=""),
+    CallSid: str = Form(default=""),
+):
+    """
+    Twilio calls this after the patient speaks.
+    SpeechResult contains the transcribed text.
+    Returns TwiML: AI-generated Hindi reply + listens again (conversation loop).
+    """
+    print(f"[Inbound] CallSid={CallSid} | Patient said: '{SpeechResult}'")
+
+    if not SpeechResult.strip():
+        # Nothing was said — re-prompt
+        from twilio.twiml.voice_response import VoiceResponse, Gather
+        response = VoiceResponse()
+        gather = Gather(
+            input="speech",
+            language="hi-IN",
+            action="/process-speech",
+            method="POST",
+            speech_timeout="auto",
+            timeout=5,
+        )
+        gather.say(
+            "मुझे आपकी आवाज़ सुनाई नहीं दी। कृपया दोबारा बोलें।",
+            language="hi-IN",
+            voice="Polly.Aditi",
+        )
+        response.append(gather)
+        return Response(content=str(response), media_type="application/xml")
+
+    twiml = await build_response_twiml(SpeechResult, CallSid)
+    return Response(content=twiml, media_type="application/xml")
 
 
 # --------------------------------------------------------------------------- #
