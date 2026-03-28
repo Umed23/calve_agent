@@ -20,6 +20,8 @@ class Settings:
     LANGUAGE: str = os.getenv("LANGUAGE", "hi")
     STT_ENGINE: str = os.getenv("STT_ENGINE", "artpark")
     TTS_ENGINE: str = os.getenv("TTS_ENGINE", "facebook")
+    # Twilio <Say> voice — Polly.Aditi is deprecated; Polly.Kajal is the neural replacement
+    TWILIO_VOICE: str = os.getenv("TWILIO_VOICE", "Polly.Kajal")
 
     # Twilio (Optional)
     TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")

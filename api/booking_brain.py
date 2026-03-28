@@ -124,7 +124,44 @@ class BookingBrain:
         return response.choices[0].message.content.strip()
 
     # ------------------------------------------------------------------
-    # Main entry point
+    # Inbound speech handler (called by /process-speech webhook)
+    # ------------------------------------------------------------------
+
+    async def process_patient_speech(self, speech_text: str) -> str:
+        """
+        Takes the patient's transcribed speech from Twilio, sends it to
+        GPT-4o acting as a Hindi receptionist, and returns a short spoken
+        Hindi reply.  Called by main.py on every POST /process-speech.
+        """
+        clinic_name = os.getenv("CLINIC_NAME", "Sharma Clinic")
+
+        system_prompt = (
+            f"You are a warm, professional receptionist for {clinic_name} in India. "
+            "Always respond ONLY in Hindi using Devanagari script. "
+            "No English, no markdown, no emojis. "
+            "Keep answers under 2 sentences — they will be spoken aloud. "
+            "You can help with: booking appointments, checking availability, "
+            "clinic timings, doctor information, and general queries. "
+            "If you cannot help, politely say so and suggest calling back during clinic hours."
+        )
+
+        try:
+            ai_resp = await self.openai.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": speech_text},
+                ],
+                max_tokens=150,
+                temperature=0.7,
+            )
+            return ai_resp.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"[BookingBrain] process_patient_speech error: {e}")
+            return "क्षमा करें, मुझे एक तकनीकी समस्या हो रही है। कृपया थोड़ी देर बाद पुनः प्रयास करें।"
+
+    # ------------------------------------------------------------------
+    # Outbound call entry point
     # ------------------------------------------------------------------
 
     async def handle_call(

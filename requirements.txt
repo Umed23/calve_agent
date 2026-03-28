@@ -32,3 +32,6 @@ requests>=2.31.0
 
 # Telephony (optional — only used when USE_TWILIO=true)
 twilio>=9.0.0
+
+# Observability — Prometheus metrics (scraped by Grafana Cloud)
+prometheus-fastapi-instrumentator>=6.1.0
