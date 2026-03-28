@@ -131,6 +131,15 @@ async def build_response_twiml(speech_result: str, call_sid: str) -> str:
         if not ai_response:
             ai_response = "क्षमा करें, मुझे समझ नहीं आया। कृपया दोबारा बोलें।"
 
+        # ── HANGUP sentinel: quota/billing errors — end call cleanly ─────────
+        if ai_response.startswith("HANGUP:"):
+            message = ai_response[len("HANGUP:"):]
+            response.say(message, language=TWILIO_LANG, voice=TWILIO_VOICE)
+            response.hangup()
+            stats.record_failure()
+            logger.warning(f"[{call_sid}] 🔴 Hanging up due to service error ({latency:.2f}s)")
+            return str(response)
+
         response.say(ai_response, language=TWILIO_LANG, voice=TWILIO_VOICE)
 
         # Continue conversation loop

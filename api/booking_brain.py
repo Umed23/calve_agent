@@ -1,7 +1,10 @@
+import logging
 import os
 from datetime import datetime, date
 from supabase import create_client, Client
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class BookingBrain:
@@ -147,7 +150,7 @@ class BookingBrain:
 
         try:
             ai_resp = await self.openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-4o-mini",   # cheaper; switch to gpt-4o when quota allows
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": speech_text},
@@ -157,7 +160,11 @@ class BookingBrain:
             )
             return ai_resp.choices[0].message.content.strip()
         except Exception as e:
-            print(f"[BookingBrain] process_patient_speech error: {e}")
+            err_str = str(e)
+            logger.error(f"[BookingBrain] process_patient_speech error: {e}")
+            # Quota/billing exhausted — signal caller to hang up, no point retrying
+            if "insufficient_quota" in err_str or "429" in err_str:
+                return "HANGUP:क्षमा करें, अभी सेवा उपलब्ध नहीं है। कृपया कल पुनः कॉल करें। धन्यवाद।"
             return "क्षमा करें, मुझे एक तकनीकी समस्या हो रही है। कृपया थोड़ी देर बाद पुनः प्रयास करें।"
 
     # ------------------------------------------------------------------
