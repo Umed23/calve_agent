@@ -20,8 +20,10 @@ class Settings:
     LANGUAGE: str = os.getenv("LANGUAGE", "hi")
     STT_ENGINE: str = os.getenv("STT_ENGINE", "artpark")
     TTS_ENGINE: str = os.getenv("TTS_ENGINE", "facebook")
-    # Twilio <Say> voice — Polly.Aditi is deprecated; Polly.Kajal is the neural replacement
-    TWILIO_VOICE: str = os.getenv("TWILIO_VOICE", "Polly.Kajal")
+    # Twilio <Say> voice
+    # Polly.Aditi = standard, works on ALL Twilio accounts (deprecated by AWS but still active on Twilio)
+    # Polly.Kajal = neural quality but requires Twilio Neural Voice add-on (premium)
+    TWILIO_VOICE: str = os.getenv("TWILIO_VOICE", "Polly.Aditi")
 
     # Twilio (Optional)
     TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
