@@ -9,8 +9,10 @@ class Settings:
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-    # OpenAI
+    # OpenAI / LLM
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     # Clinic
     CLINIC_ID: str = os.getenv("CLINIC_ID", "clinic_001")

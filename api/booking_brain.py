@@ -24,7 +24,21 @@ class BookingBrain:
             )
 
         self.supabase: Client = create_client(supabase_url, supabase_key)
-        self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        self.llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        if self.llm_provider == "gemini":
+            gemini_key = os.getenv("GEMINI_API_KEY")
+            if not gemini_key:
+                raise RuntimeError("GEMINI_API_KEY must be set if LLM_PROVIDER=gemini")
+            self.openai = AsyncOpenAI(
+                api_key=gemini_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+            self.model_name = "gemini-2.5-flash"
+        else:
+            self.openai = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            self.model_name = "gpt-4o-mini"
+
         self.use_twilio = use_twilio
 
         if use_twilio:
@@ -115,7 +129,7 @@ class BookingBrain:
         )
 
         response = await self.openai.chat.completions.create(
-            model="gpt-4o",
+            model=self.model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -150,7 +164,7 @@ class BookingBrain:
 
         try:
             ai_resp = await self.openai.chat.completions.create(
-                model="gpt-4o-mini",   # cheaper; switch to gpt-4o when quota allows
+                model=self.model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": speech_text},
