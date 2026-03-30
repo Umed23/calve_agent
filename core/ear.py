@@ -7,6 +7,9 @@ import collections
 import torch
 import soundfile as sf
 import torchaudio
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Monkey-patch BEFORE transformers import
 def safe_load(filepath, **kwargs):
@@ -27,7 +30,7 @@ class Ear:
         self.device = 0 if torch.cuda.is_available() else "cpu"
         
         model_id = "ARTPARK-IISc/whisper-small-vaani-hindi"
-        print(f"Loading ARTPARK Vaani STT ({model_id}) on {self.device}...")
+        logger.info(f"[Ear] Loading ARTPARK Vaani STT ({model_id}) on {self.device}...")
         
         self.transcriber = pipeline(
             "automatic-speech-recognition",
@@ -70,7 +73,7 @@ class Ear:
         self.capture_thread = threading.Thread(target=self._capture_audio)
         self.capture_thread.daemon = True
         self.capture_thread.start()
-        print("Ear: Started listening.")
+        logger.info("[Ear] Started listening to microphone.")
 
     def stop_listening(self):
         self.listening = False
@@ -80,7 +83,7 @@ class Ear:
             self.stream.stop_stream()
             self.stream.close()
             self.p.terminate()
-        print("Ear: Stopped listening.")
+        logger.info("[Ear] Stopped listening.")
 
     def _capture_audio(self):
         while self.listening:
@@ -88,7 +91,7 @@ class Ear:
                 data = self.stream.read(self.chunk_size, exception_on_overflow=False)
                 self.audio_queue.put(data)
             except Exception as e:
-                print(f"Ear Error: {e}")
+                logger.error(f"[Ear] Audio Capture Error: {e}", exc_info=True)
                 break
 
     def _transcribe_async(self, audio_np):
@@ -100,13 +103,13 @@ class Ear:
             )
             text = result["text"].strip()
             if text and not self._is_hallucination(text):
-                print(f"Ear heard: '{text}'")
+                logger.info(f"[Ear] Fully Transcribed Speech: '{text}'")
                 self._result_queue.put(text)
             else:
                 if text:
-                    print(f"Ear ignored hallucination: '{text}'")
+                    logger.debug(f"[Ear] Ignored STT hallucination: '{text}'")
         except Exception as e:
-            print(f"Transcription error: {e}")
+            logger.error(f"[Ear] Transcription background error: {e}", exc_info=True)
 
     def listen(self):
         """Generator that yields transcribed text segments."""
@@ -144,7 +147,7 @@ class Ear:
 
             if is_speech:
                 if not speech_detected:
-                    print(f"Ear: Speech detected (RMS: {int(rms)})...")
+                    logger.debug(f"[Ear] Speech activity detected (RMS: {int(rms)})...")
                     frames.extend(self.preroll_buffer)
                     self.preroll_buffer.clear()
                 speech_detected = True
@@ -159,9 +162,10 @@ class Ear:
                         total_duration_ms = len(frames) * self.chunk_duration_ms
 
                         if total_duration_ms < MIN_PHRASE_DURATION_MS:
-                            print(f"Ear: Discarding short noise ({total_duration_ms}ms)")
+                            pass # discard silently to reduce log spam
+                            # logger.debug(f"[Ear] Discarding short noise ({total_duration_ms}ms)")
                         else:
-                            print(f"Ear: Processing phrase ({len(frames)} frames)...")
+                            logger.info(f"[Ear] Processing spoken phrase block ({len(frames)} frames)...")
                             audio_data = b''.join(frames)
                             audio_np = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 

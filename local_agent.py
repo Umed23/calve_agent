@@ -33,13 +33,22 @@ from core.brain import Brain
 from core.mouth_neural import NeuralMouth
 from core.vagus import VagusNerve
 from core.state import AgentState
+import logging
+
+# Configure basic logging for the local agent script
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
+logger = logging.getLogger("LocalAgent")
 
 # Load environment variables
 load_dotenv()
 
 
 def main():
-    print("Initializing CALVE Voice Agent (Streaming Architecture)...")
+    logger.info("Initializing CALVE Voice Agent (Streaming Architecture)...")
 
     # Initialize components
     try:
@@ -54,11 +63,11 @@ def main():
         state = AgentState.IDLE
 
     except Exception as e:
-        print(f"Initialization Error: {e}")
+        logger.error(f"Initialization Error: {e}", exc_info=True)
         return
 
-    print("Agent is ready. Speak into the microphone.")
-    print("Press Ctrl+C to exit.")
+    logger.info("Agent is ready. Speak into the microphone.")
+    logger.info("Press Ctrl+C to exit.")
 
     # Start listening background thread
     ear.start_listening()
@@ -78,18 +87,18 @@ def main():
         क्या आप नई अपॉइंटमेंट लेना चाहते हैं या अपनी मौजूदा अपॉइंटमेंट में कोई बदलाव करना चाहते हैं?
         कृपया बताइए, मैं आपकी सहायता करने की पूरी कोशिश करूँगा।
         """
-        print(f"\nAgent: {intro_text}")
+        logger.info(f"Agent: {intro_text.strip()}")
         current_state = AgentState.SPEAKING
         mouth.speak_stream([intro_text], check_interrupt_func=check_interruption)
 
         current_state = AgentState.LISTENING
-        print("\nEar: Waiting for you to speak...")
+        logger.info("Ear: Waiting for you to speak...")
 
         for user_text in text_generator:
-            print(f"\nUser: {user_text}")
+            logger.info(f"\nUser: {user_text}")
 
             if "exit" in user_text.lower() or "quit" in user_text.lower():
-                print("Exiting...")
+                logger.info("Exiting...")
                 break
 
             current_state = AgentState.THINKING
@@ -101,11 +110,11 @@ def main():
                 current_state = AgentState.LISTENING
 
     except KeyboardInterrupt:
-        print("\nStopping...")
+        logger.info("\nStopping...")
     finally:
         ear.stop_listening()
         mouth.stop()
-        print("Agent Stopped.")
+        logger.info("Agent Stopped.")
 
 
 if __name__ == "__main__":

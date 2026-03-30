@@ -7,6 +7,9 @@ import time
 import os
 import torch
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 class NeuralMouth:
     """
@@ -67,7 +70,7 @@ class NeuralMouth:
         return text
 
     def __init__(self, use_gpu=False, language='h', play_audio=True, enhance_audio=False):
-        print(f"NeuralMouth: Initializing MMS-TTS-Hin (enhance_audio={enhance_audio})...")
+        logger.info(f"[NeuralMouth] Initializing MMS-TTS-Hin (enhance_audio={enhance_audio})...")
         try:
             self.play_audio = play_audio
             self.accumulated_audio = []
@@ -97,10 +100,10 @@ class NeuralMouth:
             if self.enhance_audio:
                 try:
                     from df.enhance import init_df
-                    print("NeuralMouth: Initializing DeepFilterNet enhancer...")
+                    logger.info("[NeuralMouth] Initializing DeepFilterNet enhancer...")
                     self.df_model, self.df_state, _ = init_df()
                 except ImportError:
-                    print("NeuralMouth Warning: deepfilternet package not installed. Setting enhance_audio=False.")
+                    logger.warning("[NeuralMouth] Warning: deepfilternet package not installed. Setting enhance_audio=False.")
                     self.enhance_audio = False
             
             # Queue for audio playback
@@ -112,10 +115,10 @@ class NeuralMouth:
             self.playback_thread = threading.Thread(target=self._playback_loop, daemon=True)
             self.playback_thread.start()
             
-            print(f"NeuralMouth: Ready ({self.device}). Language: {self.language}")
+            logger.info(f"[NeuralMouth] Ready ({self.device}). Language: {self.language}")
             
         except Exception as e:
-            print(f"NeuralMouth Error: Failed to load Indic Parler-TTS. {e}")
+            logger.error(f"[NeuralMouth] Error: Failed to load Indic Parler-TTS. {e}", exc_info=True)
             self.model = None
 
     def set_language(self, lang_code):
@@ -139,7 +142,7 @@ class NeuralMouth:
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"Playback Error: {e}")
+                logger.error(f"[NeuralMouth] Playback Error: {e}", exc_info=True)
                 self.is_speaking = False
 
     def speak_stream(self, token_iterator, check_interrupt_func=None):
@@ -147,7 +150,7 @@ class NeuralMouth:
         Consumes a stream of tokens, buffers them into sentences, and speaks them.
         """
         if not self.model:
-            print("Mouth: TTS Unavailable")
+            logger.warning("[NeuralMouth] TTS Unavailable")
             return
 
         sentence_buffer = ""
@@ -157,16 +160,16 @@ class NeuralMouth:
         self.stop_event.clear()
         
         if check_interrupt_func and check_interrupt_func():
-            print("Mouth: Stream interrupted before start.")
+            logger.info("[NeuralMouth] Stream interrupted before start.")
             return
 
         for token in token_iterator:
             if self.stop_event.is_set():
-                print("Mouth: Stopping stream due to interruption signal.")
+                logger.info("[NeuralMouth] Stopping stream due to interruption signal.")
                 break
                 
             if check_interrupt_func and check_interrupt_func():
-                print("Mouth: Stream interrupted during generation.")
+                logger.info("[NeuralMouth] Stream interrupted during generation.")
                 self.stop_immediately()
                 break
                 
@@ -189,7 +192,7 @@ class NeuralMouth:
         if not self.model: return
         try:
             clean_text = self.preprocess_text(text)
-            print(f"Mouth: Synthesizing segment: '{clean_text[:30]}...'")
+            logger.info(f"[NeuralMouth] Synthesizing segment: '{clean_text[:50]}...'")
             
             inputs = self.tokenizer(clean_text, return_tensors="pt").to(self.device)
             
@@ -228,11 +231,11 @@ class NeuralMouth:
                 
             self.audio_queue.put(audio_np)
         except Exception as e:
-            print(f"Generation Error: {e}")
+            logger.error(f"[NeuralMouth] Generation Error: {e}", exc_info=True)
 
     def stop_immediately(self):
         """Cancels all playback and clears queues."""
-        print("Mouth: EMERGENCY STOP")
+        logger.warning("[NeuralMouth] EMERGENCY STOP invoked")
         self.stop_event.set()
         
         # Clear the queue

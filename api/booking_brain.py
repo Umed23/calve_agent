@@ -54,7 +54,7 @@ class BookingBrain:
                     "USE_TWILIO=true but 'twilio' package is not installed."
                 )
 
-        print("✅ BookingBrain ready")
+        logger.info(f"✅ BookingBrain initialized (Provider: {self.llm_provider.upper()}, Model: {self.model_name})")
 
     # ------------------------------------------------------------------
     # Supabase helpers
@@ -66,17 +66,20 @@ class BookingBrain:
         of voice-friendly time strings in HH24:MI format, e.g. ['09:00', '10:30'].
         """
         try:
+            logger.info(f"[{doctor_id}] Fetching available slots for date: {target_date}")
             response = self.supabase.rpc(
                 "get_available_slots",
                 {"p_doctor_id": doctor_id, "p_date": target_date},
             ).execute()
 
             if response.data:
-                # RPC returns rows; extract the slot_time column
-                return [row["slot_time"] for row in response.data]
+                slots = [row["slot_time"] for row in response.data]
+                logger.info(f"[{doctor_id}] Found {len(slots)} slots: {slots}")
+                return slots
+            logger.info(f"[{doctor_id}] No slots available for {target_date}")
             return []
         except Exception as e:
-            print(f"[BookingBrain] Error fetching slots: {e}")
+            logger.error(f"[BookingBrain] Error fetching slots: {e}", exc_info=True)
             return []
 
     async def log_call(
@@ -99,9 +102,10 @@ class BookingBrain:
                     "call_date": datetime.utcnow().isoformat(),
                 }
             ).execute()
+            logger.info(f"[Call Log] Successfully recorded call for {patient_phone} (Success: {success})")
         except Exception as e:
             # Logging failures should never crash the main flow
-            print(f"[BookingBrain] Call logging error: {e}")
+            logger.error(f"[BookingBrain] Call logging error: {e}", exc_info=True)
 
     # ------------------------------------------------------------------
     # AI message generation
@@ -138,7 +142,9 @@ class BookingBrain:
             temperature=0.7,
         )
 
-        return response.choices[0].message.content.strip()
+        generated_msg = response.choices[0].message.content.strip()
+        logger.info(f"[BookingBrain] Generated slot message: {generated_msg}")
+        return generated_msg
 
     # ------------------------------------------------------------------
     # Inbound speech handler (called by /process-speech webhook)
@@ -163,6 +169,7 @@ class BookingBrain:
         )
 
         try:
+            logger.info(f"[BookingBrain] Processing patient speech snippet: '{speech_text[:50]}...'")
             ai_resp = await self.openai.chat.completions.create(
                 model=self.model_name,
                 messages=[
@@ -172,10 +179,12 @@ class BookingBrain:
                 max_tokens=150,
                 temperature=0.7,
             )
-            return ai_resp.choices[0].message.content.strip()
+            reply = ai_resp.choices[0].message.content.strip()
+            logger.info(f"[BookingBrain] AI generated reply: '{reply}'")
+            return reply
         except Exception as e:
             err_str = str(e)
-            logger.error(f"[BookingBrain] process_patient_speech error: {e}")
+            logger.error(f"[BookingBrain] process_patient_speech error: {e}", exc_info=True)
             # Quota/billing exhausted — signal caller to hang up, no point retrying
             if "insufficient_quota" in err_str or "429" in err_str:
                 return "HANGUP:क्षमा करें, अभी सेवा उपलब्ध नहीं है। कृपया कल पुनः कॉल करें। धन्यवाद।"
@@ -200,6 +209,8 @@ class BookingBrain:
         Returns a dict compatible with BookingResponse.
         """
         try:
+            logger.info(f"[BookingBrain.handle_call] Initiated outbound flow for {patient_phone} (Doctor: {doctor_id}, Date: {preferred_date})")
+            
             # Step 1 — Fetch slots
             slots = await self.get_available_slots(doctor_id, preferred_date)
 
@@ -208,6 +219,7 @@ class BookingBrain:
                     "क्षमा करें, इस तारीख को डॉक्टर के पास कोई समय उपलब्ध नहीं है। "
                     "कृपया कोई और तारीख चुनें।"
                 )
+                logger.info(f"[BookingBrain.handle_call] No slots found, aborting standard flow. Message: {message}")
                 await self.log_call(patient_phone, doctor_id, message, False)
                 return {"success": False, "message": message, "slots": []}
 
@@ -217,6 +229,7 @@ class BookingBrain:
             # Step 3 — Optionally place Twilio call
             call_sid = None
             if self.use_twilio:
+                logger.info(f"[Twilio] Starting outbound call dispatch for {patient_phone}...")
                 try:
                     twiml = (
                         f'<Response><Say language="hi-IN">{message}</Say></Response>'
@@ -227,9 +240,11 @@ class BookingBrain:
                         twiml=twiml,
                     )
                     call_sid = call.sid
-                    print(f"[Twilio] Call placed: {call_sid}")
+                    logger.info(f"[Twilio] ✅ Outbound call placed successfully: {call_sid}")
                 except Exception as e:
-                    print(f"[Twilio] Call failed (non-fatal): {e}")
+                    logger.error(f"[Twilio] 🔴 Outbound call failed (non-fatal): {e}", exc_info=True)
+            else:
+                logger.debug("[Twilio] USE_TWILIO=false, skipping Twilio API call")
 
             # Step 4 — Log
             await self.log_call(patient_phone, doctor_id, message, True)
@@ -242,6 +257,6 @@ class BookingBrain:
             }
 
         except Exception as e:
-            print(f"[BookingBrain] handle_call error: {e}")
+            logger.error(f"[BookingBrain] handle_call unexpected error: {e}", exc_info=True)
             await self.log_call(patient_phone, doctor_id, str(e), False)
             return {"success": False, "message": "Internal error", "error": str(e)}

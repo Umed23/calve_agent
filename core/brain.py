@@ -10,6 +10,9 @@ import os
 import time
 import requests
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -19,7 +22,7 @@ load_dotenv()
 def check_appointment_availability(date: str) -> str:
     """Checks if the doctor is available for an appointment on a given date. 
     Pass the date in natural language, e.g., 'tomorrow' or 'next week'."""
-    print(f"[TOOL EXECUTION] Checking DB for appointments on: {date}")
+    logger.info(f"[TOOL: check_appointment_availability] Querying DB for appointments on: {date}")
     # Mock database lookup
     time.sleep(1) 
     return f"Yes, there are open slots in the morning on {date}."
@@ -51,14 +54,14 @@ class Brain:
         7. If the user asks for an appointment, ALWAYS use the `check_appointment_availability` tool to check the calendar before confirming."""
                 
         if anthropic_key:
-            print("Brain: Using Anthropic (Claude 3.5 Sonnet) with Tool Calling")
+            logger.info("[Brain] Initializing Anthropic (Claude 3.5 Sonnet) with Tool Calling")
             self.llm = ChatAnthropic(
                 model="claude-3-5-sonnet-20241022",
                 temperature=0.7,
                 api_key=anthropic_key
             ).bind_tools(tools)
         else:
-            print("WARNING: No ANTHROPIC_API_KEY found. Falling back to simulated text.")
+            logger.warning("[Brain] WARNING: No ANTHROPIC_API_KEY found. Falling back to simulated text.")
             self.simulated = True
 
         if not self.simulated:
@@ -100,7 +103,7 @@ class Brain:
         """
         Processes user input and returns the agent's response.
         """
-        print(f"Brain: Thinking about '{user_input}'...")
+        logger.info(f"[Brain] Thinking about user input: '{user_input}'...")
         
         if self.simulated:
             time.sleep(1) # simulate thinking
@@ -121,14 +124,14 @@ class Brain:
             self.history.append(response_message)
             return response_text
         except Exception as e:
-            print(f"Brain Error: {e}")
+            logger.error(f"[Brain] Error during thinking: {e}", exc_info=True)
             return "I am having trouble connecting to my brain. Please check your API key and quota."
 
     def think_stream(self, user_input: str):
         """
         Generator that yields tokens from the LLM.
         """
-        print(f"Brain: Thinking (Streaming) about '{user_input}'...")
+        logger.info(f"[Brain] Streaming thought process for: '{user_input}'...")
         
         if self.simulated:
             time.sleep(0.5)
@@ -159,7 +162,8 @@ class Brain:
             final_state = self.app.invoke({"messages": self.history})
             # LangGraph returns all messages; update our local history completely
             self.history = final_state["messages"]
+            logger.info("[Brain] Finished streaming response.")
             
         except Exception as e:
-            print(f"Brain Streaming Error: {e}")
+            logger.error(f"[Brain] Streaming Error: {e}", exc_info=True)
             yield "I am having trouble connecting. "
