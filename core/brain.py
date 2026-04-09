@@ -50,7 +50,7 @@ class Brain:
         3. Use simple, natural, spoken-style Hindi suitable for conversation with patients in India.
         4. DO NOT use markdown, emojis, bullet points, or long paragraphs, as the response will be spoken aloud by a TTS engine.
         5. Keep answers under 2 sentences unless something requires a slightly longer explanation.
-        6. Be exceptionally polite, respectful, and warmly welcome the patient.
+        6. Be exceptionally polite and respectful. If the conversation is already ongoing, DO NOT repeat the "welcome" greeting—just answer their question directly.
         7. If the user asks for an appointment, ALWAYS use the `check_appointment_availability` tool to check the calendar before confirming."""
                 
         if anthropic_key:

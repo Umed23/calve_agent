@@ -34,6 +34,7 @@ from core.mouth_neural import NeuralMouth
 from core.vagus import VagusNerve
 from core.state import AgentState
 import logging
+from langchain_core.messages import AIMessage
 
 # Configure basic logging for the local agent script
 logging.basicConfig(
@@ -87,6 +88,10 @@ def main():
         क्या आप नई अपॉइंटमेंट लेना चाहते हैं या अपनी मौजूदा अपॉइंटमेंट में कोई बदलाव करना चाहते हैं?
         कृपया बताइए, मैं आपकी सहायता करने की पूरी कोशिश करूँगा।
         """
+        
+        # FIX: Give the brain memory that it just spoke the greeting
+        brain.history.append(AIMessage(content=intro_text.strip()))
+        
         logger.info(f"Agent: {intro_text.strip()}")
         current_state = AgentState.SPEAKING
         mouth.speak_stream([intro_text], check_interrupt_func=check_interruption)
