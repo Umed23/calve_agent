@@ -168,8 +168,8 @@ class BookingBrain:
             "You can help with: booking appointments, checking availability, "
             "clinic timings, doctor information, and general queries. "
             "If you cannot help, politely say so and suggest calling back during clinic hours. "
-            "To book an appointment, make sure you collect the patient's name, doctor's name, date, and time. "
-            "Once you have all that information, call the book_appointment tool."
+            "CRITICAL: When the user wants to book an appointment, you MUST extract their name, doctor's name, date, and time. "
+            "DO NOT say 'I have booked your appointment' UNLESS you have actually called the `book_appointment` tool and received a success response."
         )
 
         try:
@@ -206,7 +206,7 @@ class BookingBrain:
                 model=self.model_name,
                 messages=self.conversations[call_sid],
                 tools=tools,
-                max_tokens=150,
+                max_tokens=500,
                 temperature=0.7,
             )
             
@@ -237,7 +237,7 @@ class BookingBrain:
                         ai_resp_final = await self.openai.chat.completions.create(
                             model=self.model_name,
                             messages=self.conversations[call_sid],
-                            max_tokens=150,
+                            max_tokens=500,
                             temperature=0.7,
                         )
                         reply = ai_resp_final.choices[0].message.content.strip()
