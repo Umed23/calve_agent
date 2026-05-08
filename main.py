@@ -124,7 +124,7 @@ async def build_response_twiml(speech_result: str, call_sid: str) -> str:
         # ── AI response ───────────────────────────────────────────────
         t0 = time.monotonic()
         logger.info(f"[{call_sid}] Processing: {speech_result[:100]}…")
-        ai_response = await booking_brain.process_patient_speech(speech_result)
+        ai_response = await booking_brain.process_patient_speech(speech_result, call_sid)
         latency = time.monotonic() - t0
         logger.info(f"[{call_sid}] GPT-4o latency: {latency:.2f}s")
 

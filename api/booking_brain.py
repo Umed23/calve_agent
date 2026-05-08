@@ -3,6 +3,7 @@ import os
 from datetime import datetime, date
 from supabase import create_client, Client
 from openai import AsyncOpenAI
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class BookingBrain:
             self.model_name = "gpt-4o-mini"
 
         self.use_twilio = use_twilio
+        self.conversations = {}
 
         if use_twilio:
             try:
@@ -150,7 +152,7 @@ class BookingBrain:
     # Inbound speech handler (called by /process-speech webhook)
     # ------------------------------------------------------------------
 
-    async def process_patient_speech(self, speech_text: str) -> str:
+    async def process_patient_speech(self, speech_text: str, call_sid: str) -> str:
         """
         Takes the patient's transcribed speech from Twilio, sends it to
         GPT-4o acting as a Hindi receptionist, and returns a short spoken
@@ -165,21 +167,87 @@ class BookingBrain:
             "Keep answers under 2 sentences — they will be spoken aloud. "
             "You can help with: booking appointments, checking availability, "
             "clinic timings, doctor information, and general queries. "
-            "If you cannot help, politely say so and suggest calling back during clinic hours."
+            "If you cannot help, politely say so and suggest calling back during clinic hours. "
+            "To book an appointment, make sure you collect the patient's name, doctor's name, date, and time. "
+            "Once you have all that information, call the book_appointment tool."
         )
 
         try:
-            logger.info(f"[BookingBrain] Processing patient speech snippet: '{speech_text[:50]}...'")
+            logger.info(f"[BookingBrain] Processing patient speech snippet: '{speech_text[:50]}...' for call {call_sid}")
+            
+            if call_sid not in self.conversations:
+                self.conversations[call_sid] = [
+                    {"role": "system", "content": system_prompt}
+                ]
+            
+            self.conversations[call_sid].append({"role": "user", "content": speech_text})
+
+            tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "book_appointment",
+                        "description": "Books an appointment. Call this ONLY when you have the patient's name, doctor's name, date, and time.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "patient_name": {"type": "string"},
+                                "doctor_name": {"type": "string"},
+                                "date": {"type": "string"},
+                                "time": {"type": "string"}
+                            },
+                            "required": ["patient_name", "doctor_name", "date", "time"]
+                        }
+                    }
+                }
+            ]
+
             ai_resp = await self.openai.chat.completions.create(
                 model=self.model_name,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": speech_text},
-                ],
+                messages=self.conversations[call_sid],
+                tools=tools,
                 max_tokens=150,
                 temperature=0.7,
             )
-            reply = ai_resp.choices[0].message.content.strip()
+            
+            message = ai_resp.choices[0].message
+            
+            # Handle tool calls
+            if message.tool_calls:
+                for tool_call in message.tool_calls:
+                    if tool_call.function.name == "book_appointment":
+                        args = json.loads(tool_call.function.arguments)
+                        logger.info(f"[BookingBrain] Tool call: book_appointment with {args}")
+                        
+                        # Add tool call to conversation
+                        self.conversations[call_sid].append({
+                            "role": "assistant",
+                            "tool_calls": [{"id": tool_call.id, "type": "function", "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments}}]
+                        })
+                        
+                        # Mock the DB booking action here
+                        self.conversations[call_sid].append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": "book_appointment",
+                            "content": json.dumps({"status": "success", "message": "Appointment booked successfully in DB."})
+                        })
+                        
+                        # Request final response from AI
+                        ai_resp_final = await self.openai.chat.completions.create(
+                            model=self.model_name,
+                            messages=self.conversations[call_sid],
+                            max_tokens=150,
+                            temperature=0.7,
+                        )
+                        reply = ai_resp_final.choices[0].message.content.strip()
+                        self.conversations[call_sid].append({"role": "assistant", "content": reply})
+                        logger.info(f"[BookingBrain] AI generated reply after booking: '{reply}'")
+                        return reply
+
+            # Normal response
+            reply = message.content.strip() if message.content else "क्षमा करें, मुझे समझ नहीं आया।"
+            self.conversations[call_sid].append({"role": "assistant", "content": reply})
             logger.info(f"[BookingBrain] AI generated reply: '{reply}'")
             return reply
         except Exception as e:
