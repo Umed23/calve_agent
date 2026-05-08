@@ -95,7 +95,7 @@ def build_greeting_twiml() -> str:
     return str(response)
 
 
-async def build_response_twiml(speech_result: str, call_sid: str) -> str:
+async def build_response_twiml(speech_result: str, call_sid: str, caller_phone: str) -> str:
     response = VoiceResponse()
     try:
         # ── Empty speech ──────────────────────────────────────────────
@@ -124,7 +124,7 @@ async def build_response_twiml(speech_result: str, call_sid: str) -> str:
         # ── AI response ───────────────────────────────────────────────
         t0 = time.monotonic()
         logger.info(f"[{call_sid}] Processing: {speech_result[:100]}…")
-        ai_response = await booking_brain.process_patient_speech(speech_result, call_sid)
+        ai_response = await booking_brain.process_patient_speech(speech_result, call_sid, caller_phone)
         latency = time.monotonic() - t0
         logger.info(f"[{call_sid}] GPT-4o latency: {latency:.2f}s")
 
@@ -295,6 +295,7 @@ async def process_speech_get():
 async def process_speech(
     SpeechResult: str = Form(default=""),
     CallSid: str = Form(default=""),
+    From: str = Form(default=""),
 ):
     """Main speech processing webhook — called by Twilio after patient speaks."""
     is_empty = not SpeechResult or not SpeechResult.strip()
@@ -304,7 +305,7 @@ async def process_speech(
 
     failed_before = stats.calls_failed
     t0 = time.monotonic()
-    twiml = await build_response_twiml(SpeechResult, CallSid)
+    twiml = await build_response_twiml(SpeechResult, CallSid, From)
     elapsed = time.monotonic() - t0
 
     if PROMETHEUS_ENABLED and not is_empty:

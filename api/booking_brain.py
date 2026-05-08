@@ -152,7 +152,7 @@ class BookingBrain:
     # Inbound speech handler (called by /process-speech webhook)
     # ------------------------------------------------------------------
 
-    async def process_patient_speech(self, speech_text: str, call_sid: str) -> str:
+    async def process_patient_speech(self, speech_text: str, call_sid: str, patient_phone: str) -> str:
         """
         Takes the patient's transcribed speech from Twilio, sends it to
         GPT-4o acting as a Hindi receptionist, and returns a short spoken
@@ -169,6 +169,7 @@ class BookingBrain:
             "clinic timings, doctor information, and general queries. "
             "If you cannot help, politely say so and suggest calling back during clinic hours. "
             "CRITICAL: When the user wants to book an appointment, you MUST extract their name, doctor's name, date, and time. "
+            f"Assume today's date is {datetime.utcnow().strftime('%Y-%m-%d')}. If the patient says 'tomorrow', calculate the exact date. "
             "DO NOT say 'I have booked your appointment' UNLESS you have actually called the `book_appointment` tool and received a success response."
         )
 
@@ -193,8 +194,8 @@ class BookingBrain:
                             "properties": {
                                 "patient_name": {"type": "string"},
                                 "doctor_name": {"type": "string"},
-                                "date": {"type": "string"},
-                                "time": {"type": "string"}
+                                "date": {"type": "string", "description": "Strictly format as YYYY-MM-DD. Example: '2026-05-11'"},
+                                "time": {"type": "string", "description": "Strictly format as HH:MM in 24-hour time. Example: '10:00' or '14:30'"}
                             },
                             "required": ["patient_name", "doctor_name", "date", "time"]
                         }
@@ -225,12 +226,53 @@ class BookingBrain:
                             "tool_calls": [{"id": tool_call.id, "type": "function", "function": {"name": tool_call.function.name, "arguments": tool_call.function.arguments}}]
                         })
                         
-                        # Mock the DB booking action here
+                        # Resolve Doctor ID
+                        doctor_mapping = {
+                            "प्रिया": "doc_002",
+                            "priya": "doc_002",
+                            "राजेश": "doc_001",
+                            "rajesh": "doc_001"
+                        }
+                        doc_id = "doc_002"  # Default fallback
+                        for key, val in doctor_mapping.items():
+                            if key in args.get("doctor_name", "").lower():
+                                doc_id = val
+                                break
+                        
+                        try:
+                            # Call the real Supabase RPC
+                            db_response = self.supabase.rpc(
+                                "create_appointment",
+                                {
+                                    "p_clinic_id": os.getenv("CLINIC_ID", "clinic_001"),
+                                    "p_doctor_id": doc_id,
+                                    "p_patient_name": args["patient_name"],
+                                    "p_patient_phone": patient_phone,
+                                    "p_appointment_date": args["date"],
+                                    "p_appointment_time": args["time"],
+                                    "p_reason_for_visit": "Voice Agent Booking"
+                                }
+                            ).execute()
+                            
+                            # Determine success or failure from DB response
+                            # RPC returns a list of dicts: [{'success': True, 'message': '...', 'appointment_id': '...'}]
+                            if db_response.data and len(db_response.data) > 0:
+                                result_data = db_response.data[0]
+                                status = "success" if result_data.get("success") else "error"
+                                db_msg = result_data.get("message", "Unknown database response")
+                            else:
+                                status = "error"
+                                db_msg = "Database returned no data."
+                        except Exception as e:
+                            logger.error(f"[BookingBrain] DB booking error: {e}", exc_info=True)
+                            status = "error"
+                            db_msg = str(e)
+                        
                         self.conversations[call_sid].append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": "book_appointment",
-                            "content": json.dumps({"status": "success", "message": "Appointment booked successfully in DB."})
+                            "content": json.dumps({"status": status, "message": db_msg})
                         })
                         
                         # Request final response from AI
